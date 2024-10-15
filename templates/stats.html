@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Statistics{% endblock %}
+
+{% block content %}
+<h1>Energy Price Statistics</h1>
+
+<h2>Vendors</h2>
+<ul>
+{% for vendor in vendors %}
+    <li>{{ vendor.name }} - {{ vendor.town }}</li>
+{% endfor %}
+</ul>
+
+<h2>Latest Prices</h2>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Vendor</th>
+            <th>Price</th>
+            <th>Date</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for price in latest_prices %}
+        <tr>
+            <td>{{ price.vendor.name }}</td>
+            <td>${{ "%.2f"|format(price.price) }}</td>
+            <td>{{ price.date }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
