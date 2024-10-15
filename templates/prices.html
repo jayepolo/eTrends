@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Prices{% endblock %}
+{% block content %}
+<h1>Oil Price Data</h1>
+
+<h2>Latest Prices</h2>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Vendor</th>
+            <th>Price</th>
+            <th>Date</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in latest_prices %}
+        <tr>
+            <td>{{ row.Vendor.name }}</td>
+            <td>${{ "%.2f"|format(row.PriceData.price) }}</td>
+            <td>{{ row.PriceData.date }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Trends{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+<style>
+    #chartContainer {
+        height: 400px;
+        margin-bottom: 30px;
+    }
+    .vendor-list {
+        margin-bottom: 20px;
+    }
+    .vendor-column {
+        padding-left: 30px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>Oil Price Trends</h1>
+
+<div class="row">
+    <div class="col-md-9">
+        <div id="chartContainer">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+    <div class="col-md-3 vendor-column">
+        <h3>Vendors</h3>
+        <div class="vendor-list">
+            {% for vendor in vendors %}
+            <div class="form-check">
+                <input class="form-check-input vendor-checkbox" type="checkbox" value="{{ vendor }}" id="vendor-{{ loop.index }}" checked>
+                <label class="form-check-label" for="vendor-{{ loop.index }}">
+                    {{ vendor }}
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+        <button id="selectLowestPrices" class="btn btn-primary">Select 5 Lowest Price Vendors</button>
+    </div>
+</div>
+
+<script>
+    const vendorData = {{ vendors | tojson }};
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    const colors = [
+        'rgba(255, 99, 132, 1)',
+        'rgba(54, 162, 235, 1)',
+        'rgba(255, 206, 86, 1)',
+        'rgba(75, 192, 192, 1)',
+        'rgba(153, 102, 255, 1)',
+        'rgba(255, 159, 64, 1)'
+    ];
+
+    const datasets = Object.entries(vendorData).map(([vendor, data], index) => ({
+        label: vendor,
+        data: data.prices.map((price, i) => ({ x: new Date(data.dates[i]), y: price })),
+        borderColor: colors[index % colors.length],
+        backgroundColor: colors[index % colors.length],
+        fill: false,
+        pointRadius: data.prices.length === 1 ? 5 : undefined,
+    }));
+
+    const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'month'
+                    },
+                    title: {
+                        display: true,
+                        text: 'Date'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Price ($)'
+                    },
+                    beginAtZero: false
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
+            }
+        }
+    });
+
+    document.querySelectorAll('.vendor-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const vendorName = this.value;
+            const datasetIndex = chart.data.datasets.findIndex(d => d.label === vendorName);
+            chart.setDatasetVisibility(datasetIndex, this.checked);
+            chart.update();
+        });
+    });
+
+    document.getElementById('selectLowestPrices').addEventListener('click', function() {
+        const twoWeeksAgo = new Date();
+        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+        const recentPrices = Object.entries(vendorData).map(([vendor, data]) => {
+            const recentPrice = data.prices.reduce((latest, price, index) => {
+                const date = new Date(data.dates[index]);
+                if (date >= twoWeeksAgo && (!latest.price || price < latest.price)) {
+                    return { price, date };
+                }
+                return latest;
+            }, { price: null, date: null });
+            return { vendor, price: recentPrice.price };
+        }).filter(item => item.price !== null);
+
+        recentPrices.sort((a, b) => a.price - b.price);
+        const lowestFiveVendors = recentPrices.slice(0, 5).map(item => item.vendor);
+
+        document.querySelectorAll('.vendor-checkbox').forEach(checkbox => {
+            const isLowest = lowestFiveVendors.includes(checkbox.value);
+            checkbox.checked = isLowest;
+            const datasetIndex = chart.data.datasets.findIndex(d => d.label === checkbox.value);
+            chart.setDatasetVisibility(datasetIndex, isLowest);
+        });
+
+        chart.update();
+    });
+</script>
+{% endblock %}

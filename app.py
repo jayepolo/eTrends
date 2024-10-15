@@ -5,10 +5,11 @@ from flask_login import LoginManager, login_user, login_required, logout_user, c
 from flask_apscheduler import APScheduler
 from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 from scraper import Scraper
 from models import db, User, Vendor, PriceData
 from config import Config
+from sqlalchemy import func, select, and_
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -90,13 +91,77 @@ def manual_scrape():
         logger.error(error_msg, exc_info=True)
     return redirect(url_for('index'))
 
-@app.route('/stats')
+
+
+
+
+@app.route('/prices')
 @login_required
-def stats():
-    vendors = Vendor.query.all()
-    latest_prices = PriceData.query.order_by(PriceData.date.desc()).limit(10).all()
-    logger.info(f"Stats page accessed by user {current_user.username}")
-    return render_template('stats.html', vendors=vendors, latest_prices=latest_prices)
+def prices():
+    # Calculate the date 3 months ago from today
+    three_months_ago = datetime.now().date() - timedelta(days=90)
+
+    # Subquery to get the latest price for each vendor within the last 3 months
+    latest_prices_subquery = (
+        select(
+            PriceData.vendor_id,
+            func.max(PriceData.date).label('max_date')
+        )
+        .where(PriceData.date >= three_months_ago)
+        .group_by(PriceData.vendor_id)
+        .subquery()
+    )
+
+    # Query to get the latest prices for all vendors, sorted by price
+    query = (
+        select(Vendor, PriceData)
+        .select_from(Vendor)
+        .join(PriceData, Vendor.id == PriceData.vendor_id)
+        .join(
+            latest_prices_subquery,
+            and_(
+                Vendor.id == latest_prices_subquery.c.vendor_id,
+                PriceData.date == latest_prices_subquery.c.max_date
+            )
+        )
+        .order_by(PriceData.price)  # Sort by price, lowest to highest
+    )
+
+    latest_prices = db.session.execute(query).all()
+
+    logger.info(f"Prices page accessed by user {current_user.username}")
+    return render_template('prices.html', latest_prices=latest_prices)
+
+@app.route('/trends')
+@login_required
+def trends():
+    # Calculate the date 1 year ago from today
+    one_year_ago = datetime.now().date() - timedelta(days=365)
+
+    # Query to get price data for all vendors within the last year
+    query = (
+        select(Vendor.name, PriceData.date, PriceData.price)
+        .select_from(Vendor)
+        .join(PriceData, Vendor.id == PriceData.vendor_id)
+        .where(PriceData.date >= one_year_ago)
+        .order_by(Vendor.name, PriceData.date)
+    )
+
+    results = db.session.execute(query).fetchall()
+
+    # Process the data for the chart
+    vendors = {}
+    for row in results:
+        vendor_name = row.name
+        if vendor_name not in vendors:
+            vendors[vendor_name] = {'dates': [], 'prices': []}
+        vendors[vendor_name]['dates'].append(row.date.strftime('%Y-%m-%d'))
+        vendors[vendor_name]['prices'].append(float(row.price))
+
+    logger.info(f"Trends page accessed by user {current_user.username}")
+    return render_template('trends.html', vendors=vendors)
+
+
 
 # Scheduled task
 @scheduler.task('cron', id='daily_scrape', hour=0, minute=0)
@@ -111,5 +176,3 @@ def scheduled_scrape():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-    
