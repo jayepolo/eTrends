@@ -1,5 +1,5 @@
 import logging
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_apscheduler import APScheduler
@@ -7,9 +7,9 @@ from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from scraper import Scraper
-from models import db, User, Vendor, PriceData
+from models import db, User, Vendor, PriceData, ScrapeLog
 from config import Config
-from sqlalchemy import func, select, and_
+from sqlalchemy import func, select, and_, desc
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -47,6 +47,32 @@ def create_user(username, password):
         db.session.commit()
         logger.info(f"User {username} created successfully")
 
+# Scraping function
+def perform_scrape(scheduled=False):
+    logger.info(f"{'Scheduled' if scheduled else 'Manual'} scrape initiated")
+    try:
+        scraper.scrape()
+        success = True
+        message = 'Scraping completed successfully.'
+        logger.info(message)
+    except Exception as e:
+        success = False
+        message = f"Error during scraping: {str(e)}"
+        logger.error(message, exc_info=True)
+    
+    # Log the scrape attempt
+    log_entry = ScrapeLog(timestamp=datetime.now(), success=success, message=message, scheduled=scheduled)
+    db.session.add(log_entry)
+    db.session.commit()
+    
+    return success, message
+
+# Scheduled task
+@scheduler.task('cron', id='daily_scrape', hour=8, minute=0)
+def scheduled_scrape():
+    with app.app_context():
+        perform_scrape(scheduled=True)
+
 # Routes
 @app.route('/')
 @login_required
@@ -77,19 +103,31 @@ def logout():
     flash('Logged out successfully.', 'success')
     return redirect(url_for('login'))
 
-@app.route('/scrape', methods=['POST'])
+@app.route('/scrape', methods=['GET', 'POST'])
 @login_required
-def manual_scrape():
-    logger.info(f"Manual scrape initiated by user {current_user.username}")
-    try:
-        scraper.scrape()
-        flash('Scraping completed successfully.', 'success')
-        logger.info("Manual scrape completed successfully")
-    except Exception as e:
-        error_msg = f"Error during scraping: {str(e)}"
-        flash(error_msg, 'error')
-        logger.error(error_msg, exc_info=True)
-    return redirect(url_for('index'))
+def scrape_page():
+    if request.method == 'POST':
+        success, message = perform_scrape()
+        flash(message, 'success' if success else 'error')
+        return redirect(url_for('scrape_page'))
+    
+    logs = ScrapeLog.query.order_by(ScrapeLog.timestamp.desc()).all()
+    job = scheduler.get_job('daily_scrape')
+    is_scheduled = job is not None and job.next_run_time is not None
+    
+    return render_template('scrape.html', logs=logs, is_scheduled=is_scheduled)
+
+@app.route('/toggle_schedule', methods=['POST'])
+@login_required
+def toggle_schedule():
+    is_scheduled = request.json.get('isScheduled')
+    if is_scheduled:
+        scheduler.resume_job('daily_scrape')
+        logger.info("Scheduled scraping resumed")
+    else:
+        scheduler.pause_job('daily_scrape')
+        logger.info("Scheduled scraping paused")
+    return jsonify(success=True)
 
 
 

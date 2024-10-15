@@ -1,12 +1,8 @@
 {% extends "base.html" %}
-
 {% block title %}Home{% endblock %}
-
 {% block content %}
 <h1>Welcome to eTrends</h1>
-<p>This is the admin interface for managing the energy price data scraping process.</p>
 
-<form action="{{ url_for('manual_scrape') }}" method="post">
-    <button type="submit" class="btn btn-primary">Trigger Manual Scrape</button>
-</form>
+<p>Tracking oil prices in central Rhode Island since, uh, not long ago.</p>
+
 {% endblock %}

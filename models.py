@@ -26,3 +26,10 @@ class PriceData(db.Model):
         db.Index('idx_price_date', 'date'),
         db.Index('idx_price_vendor', 'vendor_id'),
     )
+
+class ScrapeLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, nullable=False)
+    success = db.Column(db.Boolean, nullable=False)
+    message = db.Column(db.Text)
+    scheduled = db.Column(db.Boolean, nullable=False)

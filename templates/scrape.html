@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Scrape{% endblock %}
+
+{% block content %}
+<h1>Scrape Management</h1>
+
+<div class="mb-4">
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="scheduleToggle" {% if is_scheduled %}checked{% endif %}>
+        <label class="form-check-label" for="scheduleToggle">Enable Automated Scraping (Daily at 8:00 AM)</label>
+    </div>
+</div>
+
+<div class="mb-4">
+    <form method="POST">
+        <button type="submit" class="btn btn-primary">Trigger Manual Scrape</button>
+    </form>
+</div>
+
+<h2>Scrape History</h2>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>Status</th>
+            <th>Message</th>
+            <th>Type</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for log in logs %}
+        <tr>
+            <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>{% if log.success %}Success{% else %}Failure{% endif %}</td>
+            <td>{{ log.message }}</td>
+            <td>{% if log.scheduled %}Scheduled{% else %}Manual{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script>
+document.getElementById('scheduleToggle').addEventListener('change', function() {
+    fetch('/toggle_schedule', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({isScheduled: this.checked})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(this.checked ? 'Automated scraping enabled' : 'Automated scraping disabled');
+        } else {
+            alert('Failed to update scheduling');
+            this.checked = !this.checked;
+        }
+    })
+    .catch((error) => {
+        console.error('Error:', error);
+        alert('An error occurred while updating scheduling');
+        this.checked = !this.checked;
+    });
+});
+</script>
+{% endblock %}
