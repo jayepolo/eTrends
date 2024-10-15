@@ -1,4 +1,5 @@
 import logging
+import requests
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
@@ -7,7 +8,7 @@ from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from scraper import Scraper
-from models import db, User, Vendor, PriceData, ScrapeLog
+from models import db, User, Vendor, PriceData, ScrapeLog, FederalPriceData
 from config import Config
 from sqlalchemy import func, select, and_, desc
 
@@ -61,17 +62,69 @@ def perform_scrape(scheduled=False):
         logger.error(message, exc_info=True)
     
     # Log the scrape attempt
-    log_entry = ScrapeLog(timestamp=datetime.now(), success=success, message=message, scheduled=scheduled)
+    log_entry = ScrapeLog(
+        timestamp=datetime.now(),
+        success=success,
+        message=message,
+        scheduled=scheduled,
+        scrape_type='Local'  # Add this line to set the scrape_type
+    )
     db.session.add(log_entry)
     db.session.commit()
     
     return success, message
 
-# Scheduled task
+# Scheduled task to scrape local data
 @scheduler.task('cron', id='daily_scrape', hour=8, minute=0)
 def scheduled_scrape():
     with app.app_context():
         perform_scrape(scheduled=True)
+
+# Fetch data from the Fed's EIA site on oil prices
+def fetch_federal_data():
+    api_key = "r5rztCthY9srZ1aBSnuzNZwcREkSujGwmXcAQ5KW"
+    url = f"https://api.eia.gov/v2/petroleum/pri/wfr/data/?frequency=weekly&data[0]=value&facets[series][]=W_EPD2F_PRS_SRI_DPG&sort[0][column]=period&sort[0][direction]=desc&offset=0&length=5000&api_key={api_key}"
+    
+    logger.info(f"Fetching federal data from URL: {url}")
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        
+        logger.info(f"Received {len(data['response']['data'])} data points from the API")
+        
+        new_entries = 0
+        updated_entries = 0
+        for item in data['response']['data']:
+            date = datetime.strptime(item['period'], "%Y-%m-%d").date()
+            price = float(item['value'])
+            
+            existing_data = FederalPriceData.query.filter_by(date=date).first()
+            if existing_data:
+                if existing_data.price != price:
+                    existing_data.price = price
+                    updated_entries += 1
+            else:
+                new_data = FederalPriceData(date=date, price=price)
+                db.session.add(new_data)
+                new_entries += 1
+        
+        db.session.commit()
+        logger.info(f"Federal price data updated successfully. New entries: {new_entries}, Updated entries: {updated_entries}")
+        return True, f"Federal data updated. New: {new_entries}, Updated: {updated_entries}"
+    except Exception as e:
+        logger.error(f"Error fetching federal price data: {str(e)}", exc_info=True)
+        return False, f"Error fetching federal data: {str(e)}"
+
+# Scheduled task for federal data
+@scheduler.task('cron', id='fetch_federal_data', hour=7, minute=0)
+def scheduled_federal_data_fetch():
+    with app.app_context():
+        success, message = fetch_federal_data()
+        if success:
+            logger.info("Scheduled federal data fetch completed successfully")
+        else:
+            logger.error("Scheduled federal data fetch failed")
 
 # Routes
 @app.route('/')
@@ -107,30 +160,77 @@ def logout():
 @login_required
 def scrape_page():
     if request.method == 'POST':
-        success, message = perform_scrape()
+        if 'local_scrape' in request.form:
+            success, message = perform_scrape()
+        elif 'federal_data' in request.form:
+            success, message = fetch_federal_data()
+        
+        # Log the attempt for both local and federal data
+        log_entry = ScrapeLog(
+            timestamp=datetime.now(),
+            success=success,
+            message=message,
+            scheduled=False,
+            scrape_type='Local' if 'local_scrape' in request.form else 'Federal'
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+        
         flash(message, 'success' if success else 'error')
         return redirect(url_for('scrape_page'))
     
     logs = ScrapeLog.query.order_by(ScrapeLog.timestamp.desc()).all()
-    job = scheduler.get_job('daily_scrape')
-    is_scheduled = job is not None and job.next_run_time is not None
+    local_job = scheduler.get_job('daily_scrape')
+    federal_job = scheduler.get_job('fetch_federal_data')
+    is_local_scheduled = local_job is not None and local_job.next_run_time is not None
+    is_federal_scheduled = federal_job is not None and federal_job.next_run_time is not None
     
-    return render_template('scrape.html', logs=logs, is_scheduled=is_scheduled)
+    return render_template('scrape.html', logs=logs, is_local_scheduled=is_local_scheduled, is_federal_scheduled=is_federal_scheduled)
 
 @app.route('/toggle_schedule', methods=['POST'])
 @login_required
 def toggle_schedule():
+    schedule_type = request.json.get('scheduleType')
     is_scheduled = request.json.get('isScheduled')
-    if is_scheduled:
-        scheduler.resume_job('daily_scrape')
-        logger.info("Scheduled scraping resumed")
+    
+    if schedule_type == 'local':
+        job_id = 'daily_scrape'
+    elif schedule_type == 'federal':
+        job_id = 'fetch_federal_data'
     else:
-        scheduler.pause_job('daily_scrape')
-        logger.info("Scheduled scraping paused")
+        return jsonify(success=False, message="Invalid schedule type"), 400
+    
+    if is_scheduled:
+        scheduler.resume_job(job_id)
+        logger.info(f"Scheduled {schedule_type} data scraping resumed")
+    else:
+        scheduler.pause_job(job_id)
+        logger.info(f"Scheduled {schedule_type} data scraping paused")
+    
     return jsonify(success=True)
 
-
-
+# Modify the scheduled task for federal data to check if it's enabled
+@scheduler.task('cron', id='fetch_federal_data', hour=7, minute=0)
+def scheduled_federal_data_fetch():
+    with app.app_context():
+        job = scheduler.get_job('fetch_federal_data')
+        if job and job.next_run_time is not None:
+            success, message = fetch_federal_data()
+            log_entry = ScrapeLog(
+                timestamp=datetime.now(),
+                success=success,
+                message=message,
+                scheduled=True,
+                scrape_type='Federal'
+            )
+            db.session.add(log_entry)
+            db.session.commit()
+            if success:
+                logger.info("Scheduled federal data fetch completed successfully")
+            else:
+                logger.error("Scheduled federal data fetch failed")
+        else:
+            logger.info("Scheduled federal data fetch skipped (disabled)")
 
 
 @app.route('/prices')
@@ -173,15 +273,15 @@ def prices():
 @app.route('/trends')
 @login_required
 def trends():
-    # Calculate the date 1 year ago from today
-    one_year_ago = datetime.now().date() - timedelta(days=365)
+    # Calculate the date 3 months ago from today
+    three_months_ago = datetime.now().date() - timedelta(days=90)
 
-    # Query to get price data for all vendors within the last year
+    # Query to get price data for all vendors within the last 3 months
     query = (
         select(Vendor.name, PriceData.date, PriceData.price)
         .select_from(Vendor)
         .join(PriceData, Vendor.id == PriceData.vendor_id)
-        .where(PriceData.date >= one_year_ago)
+        .where(PriceData.date >= three_months_ago)
         .order_by(Vendor.name, PriceData.date)
     )
 
@@ -196,10 +296,16 @@ def trends():
         vendors[vendor_name]['dates'].append(row.date.strftime('%Y-%m-%d'))
         vendors[vendor_name]['prices'].append(float(row.price))
 
-    logger.info(f"Trends page accessed by user {current_user.username}")
-    return render_template('trends.html', vendors=vendors)
+    # Fetch federal price data for the last 3 months
+    federal_data = FederalPriceData.query.filter(FederalPriceData.date >= three_months_ago).order_by(FederalPriceData.date).all()
+    federal_prices = {
+        'dates': [data.date.strftime('%Y-%m-%d') for data in federal_data],
+        'prices': [float(data.price) for data in federal_data]
+    }
+    
+    logger.info(f"Trends page accessed. Vendor data points: {sum(len(v['dates']) for v in vendors.values())}, Federal data points: {len(federal_data)}")
 
-
+    return render_template('trends.html', vendors=vendors, federal_prices=federal_prices)
 
 # Scheduled task
 @scheduler.task('cron', id='daily_scrape', hour=0, minute=0)

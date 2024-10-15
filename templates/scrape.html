@@ -6,14 +6,22 @@
 
 <div class="mb-4">
     <div class="form-check form-switch">
-        <input class="form-check-input" type="checkbox" id="scheduleToggle" {% if is_scheduled %}checked{% endif %}>
-        <label class="form-check-label" for="scheduleToggle">Enable Automated Scraping (Daily at 8:00 AM)</label>
+        <input class="form-check-input" type="checkbox" id="localScheduleToggle" {% if is_local_scheduled %}checked{% endif %}>
+        <label class="form-check-label" for="localScheduleToggle">Automated Local Data Scraping (Daily at 8:00 AM)</label>
     </div>
 </div>
 
 <div class="mb-4">
-    <form method="POST">
-        <button type="submit" class="btn btn-primary">Trigger Manual Scrape</button>
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="federalScheduleToggle" {% if is_federal_scheduled %}checked{% endif %}>
+        <label class="form-check-label" for="federalScheduleToggle">Automated Federal Data Retrieval (Daily at 7:00 AM)</label>
+    </div>
+</div>
+
+<div class="mb-4">
+    <form method="POST" class="d-flex">
+        <button type="submit" name="local_scrape" class="btn btn-primary me-2">Scrape Local Data</button>
+        <button type="submit" name="federal_data" class="btn btn-primary">Pull Federal Data</button>
     </form>
 </div>
 
@@ -25,6 +33,7 @@
             <th>Status</th>
             <th>Message</th>
             <th>Type</th>
+            <th>Source</th>
         </tr>
     </thead>
     <tbody>
@@ -34,24 +43,33 @@
             <td>{% if log.success %}Success{% else %}Failure{% endif %}</td>
             <td>{{ log.message }}</td>
             <td>{% if log.scheduled %}Scheduled{% else %}Manual{% endif %}</td>
+            <td>{{ log.scrape_type }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 
 <script>
-document.getElementById('scheduleToggle').addEventListener('change', function() {
+document.getElementById('localScheduleToggle').addEventListener('change', function() {
+    toggleSchedule('local', this.checked);
+});
+
+document.getElementById('federalScheduleToggle').addEventListener('change', function() {
+    toggleSchedule('federal', this.checked);
+});
+
+function toggleSchedule(scheduleType, isScheduled) {
     fetch('/toggle_schedule', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({isScheduled: this.checked})
+        body: JSON.stringify({scheduleType: scheduleType, isScheduled: isScheduled})
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert(this.checked ? 'Automated scraping enabled' : 'Automated scraping disabled');
+            alert(`Automated ${scheduleType} data ${isScheduled ? 'enabled' : 'disabled'}`);
         } else {
             alert('Failed to update scheduling');
             this.checked = !this.checked;
@@ -62,6 +80,6 @@ document.getElementById('scheduleToggle').addEventListener('change', function() 
         alert('An error occurred while updating scheduling');
         this.checked = !this.checked;
     });
-});
+}
 </script>
 {% endblock %}

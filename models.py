@@ -27,9 +27,15 @@ class PriceData(db.Model):
         db.Index('idx_price_vendor', 'vendor_id'),
     )
 
+class FederalPriceData(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False, unique=True)
+    price = db.Column(db.Float, nullable=False)
+
 class ScrapeLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, nullable=False)
     success = db.Column(db.Boolean, nullable=False)
     message = db.Column(db.Text)
     scheduled = db.Column(db.Boolean, nullable=False)
+    scrape_type = db.Column(db.String(10), nullable=False)  # 'Local' or 'Federal'
