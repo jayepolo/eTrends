@@ -13,6 +13,12 @@ instance/
 
 # SQLite database
 *.db
+/migrations/versions
+/migrations/alembic.ini
+/migrations/script.py.mako
+/reference
+/logs
+/instance
 
 # Log files
 *.log
