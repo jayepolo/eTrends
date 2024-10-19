@@ -7,16 +7,14 @@
 <style>
     #chartContainer {
         height: 400px;
-        margin-bottom: 30px;
-    }
-    .vendor-list {
         margin-bottom: 20px;
     }
-    .vendor-column {
-        padding-left: 30px;
+    .vendor-list {
+        height: calc(100vh - 100px); /* Adjust based on your page header/footer */
+        overflow-y: auto;
     }
     .control-group {
-        margin-top: 20px;
+        margin-bottom: 20px;
     }
 </style>
 {% endblock %}
@@ -25,55 +23,62 @@
 <h1>Oil Price Trends</h1>
 
 <div class="row">
+    <!-- Left Column: Chart and Controls -->
     <div class="col-md-9">
-        <div id="chartContainer">
-            <canvas id="trendChart"></canvas>
-        </div>
-        <div class="control-group">
-            <h4>Vendor Selection</h4>
-            <div class="form-check">
-                <input class="form-check-input" type="radio" name="vendorSelection" id="top5Vendors" value="top5">
-                <label class="form-check-label" for="top5Vendors">
-                    5 Lowest Price Vendors
-                </label>
-            </div>
-            <div class="form-check">
-                <input class="form-check-input" type="radio" name="vendorSelection" id="top10Vendors" value="top10">
-                <label class="form-check-label" for="top10Vendors">
-                    10 Lowest Price Vendors
-                </label>
-            </div>
-            <div class="form-check">
-                <input class="form-check-input" type="radio" name="vendorSelection" id="allVendors" value="all" checked>
-                <label class="form-check-label" for="allVendors">
-                    All Vendors
-                </label>
+        <!-- Chart -->
+        <div class="row">
+            <div class="col-12">
+                <div id="chartContainer">
+                    <canvas id="trendChart"></canvas>
+                </div>
             </div>
         </div>
-        <div class="control-group">
-            <h4>Time Window</h4>
-            <div class="form-check">
-                <input class="form-check-input" type="radio" name="timeWindow" id="30days" value="30">
-                <label class="form-check-label" for="30days">
-                    30 Days
-                </label>
+        
+        <!-- Controls -->
+        <div class="row">
+            <!-- Time Window Selection -->
+            <div class="col-md-3">
+                <div class="control-group">
+                    <h4>Time Window</h4>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="timeWindow" id="30days" value="30">
+                        <label class="form-check-label" for="30days">30 Days</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="timeWindow" id="3months" value="90" checked>
+                        <label class="form-check-label" for="3months">3 Months</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="timeWindow" id="1year" value="365">
+                        <label class="form-check-label" for="1year">1 Year</label>
+                    </div>
+                </div>
             </div>
-            <div class="form-check">
-                <input class="form-check-input" type="radio" name="timeWindow" id="3months" value="90" checked>
-                <label class="form-check-label" for="3months">
-                    3 Months
-                </label>
-            </div>
-            <div class="form-check">
-                <input class="form-check-input" type="radio" name="timeWindow" id="1year" value="365">
-                <label class="form-check-label" for="1year">
-                    1 Year
-                </label>
+            
+            <!-- Vendor Selection -->
+            <div class="col-md-6">
+                <div class="control-group">
+                    <h4>Vendor Selection</h4>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="vendorSelection" id="top5Vendors" value="top5">
+                        <label class="form-check-label" for="top5Vendors">5 Lowest Price Vendors</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="vendorSelection" id="top10Vendors" value="top10">
+                        <label class="form-check-label" for="top10Vendors">10 Lowest Price Vendors</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="vendorSelection" id="allVendors" value="all" checked>
+                        <label class="form-check-label" for="allVendors">All Vendors</label>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3 vendor-column">
-        <h3>Vendors</h3>
+    
+    <!-- Right Column: Vendor List -->
+    <div class="col-md-3">
+        <h4>Vendors</h4>
         <div class="vendor-list">
             {% for vendor in vendors %}
             <div class="form-check">
@@ -83,12 +88,12 @@
                 </label>
             </div>
             {% endfor %}
-        </div>
-        <div class="form-check">
-            <input class="form-check-input" type="checkbox" value="federal" id="federal-checkbox">
-            <label class="form-check-label" for="federal-checkbox">
-                Federal Average
-            </label>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="federal" id="federal-checkbox">
+                <label class="form-check-label" for="federal-checkbox">
+                    Federal Average
+                </label>
+            </div>
         </div>
     </div>
 </div>
@@ -158,9 +163,31 @@
                     display: false
                 },
                 tooltip: {
-                    mode: 'index',
-                    intersect: false
+                    mode: 'nearest',
+                    intersect: false,
+                    callbacks: {
+                        title: function(tooltipItems) {
+                            if (tooltipItems.length > 0) {
+                                return new Date(tooltipItems[0].parsed.x).toLocaleDateString();
+                            }
+                            return '';
+                        },
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed.y);
+                            }
+                            return label;
+                        }
+                    }
                 }
+            },
+            hover: {
+                mode: 'nearest',
+                intersect: false
             }
         }
     });
