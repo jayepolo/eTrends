@@ -15,16 +15,61 @@
     .vendor-column {
         padding-left: 30px;
     }
+    .control-group {
+        margin-top: 20px;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<h1>Oil Price Trends (Last 3 Months)</h1>
+<h1>Oil Price Trends</h1>
 
 <div class="row">
     <div class="col-md-9">
         <div id="chartContainer">
             <canvas id="trendChart"></canvas>
+        </div>
+        <div class="control-group">
+            <h4>Vendor Selection</h4>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="vendorSelection" id="top5Vendors" value="top5">
+                <label class="form-check-label" for="top5Vendors">
+                    5 Lowest Price Vendors
+                </label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="vendorSelection" id="top10Vendors" value="top10">
+                <label class="form-check-label" for="top10Vendors">
+                    10 Lowest Price Vendors
+                </label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="vendorSelection" id="allVendors" value="all" checked>
+                <label class="form-check-label" for="allVendors">
+                    All Vendors
+                </label>
+            </div>
+        </div>
+        <div class="control-group">
+            <h4>Time Window</h4>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="timeWindow" id="30days" value="30">
+                <label class="form-check-label" for="30days">
+                    30 Days
+                </label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="timeWindow" id="3months" value="90" checked>
+                <label class="form-check-label" for="3months">
+                    3 Months
+                </label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="timeWindow" id="1year" value="365">
+                <label class="form-check-label" for="1year">
+                    1 Year
+                </label>
+            </div>
         </div>
     </div>
     <div class="col-md-3 vendor-column">
@@ -40,7 +85,7 @@
             {% endfor %}
         </div>
         <div class="form-check">
-            <input class="form-check-input" type="checkbox" value="federal" id="federal-checkbox" checked>
+            <input class="form-check-input" type="checkbox" value="federal" id="federal-checkbox">
             <label class="form-check-label" for="federal-checkbox">
                 Federal Average
             </label>
@@ -120,14 +165,91 @@
         }
     });
 
+    function updateChart() {
+        chart.update();
+    }
+
+    function getLatestPrice(vendorName) {
+        const data = vendorData[vendorName];
+        return data.prices[data.prices.length - 1];
+    }
+
+    function updateVendorSelection(selection) {
+        const vendorCheckboxes = document.querySelectorAll('.vendor-checkbox');
+        const sortedVendors = Array.from(vendorCheckboxes)
+            .sort((a, b) => getLatestPrice(a.value) - getLatestPrice(b.value));
+
+        vendorCheckboxes.forEach(checkbox => {
+            checkbox.checked = false;
+            chart.setDatasetVisibility(datasets.findIndex(d => d.label === checkbox.value), false);
+        });
+
+        if (selection === 'top5') {
+            sortedVendors.slice(0, 5).forEach(checkbox => {
+                checkbox.checked = true;
+                chart.setDatasetVisibility(datasets.findIndex(d => d.label === checkbox.value), true);
+            });
+        } else if (selection === 'top10') {
+            sortedVendors.slice(0, 10).forEach(checkbox => {
+                checkbox.checked = true;
+                chart.setDatasetVisibility(datasets.findIndex(d => d.label === checkbox.value), true);
+            });
+        } else {
+            vendorCheckboxes.forEach(checkbox => {
+                checkbox.checked = true;
+                chart.setDatasetVisibility(datasets.findIndex(d => d.label === checkbox.value), true);
+            });
+        }
+
+        updateChart();
+    }
+
     document.querySelectorAll('.vendor-checkbox, #federal-checkbox').forEach(checkbox => {
         checkbox.addEventListener('change', function() {
             const datasetIndex = this.value === 'federal' ? 
                 datasets.length - 1 : 
                 datasets.findIndex(d => d.label === this.value);
             chart.setDatasetVisibility(datasetIndex, this.checked);
-            chart.update();
+            updateChart();
         });
     });
+
+    document.querySelectorAll('input[name="vendorSelection"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            updateVendorSelection(this.value);
+        });
+    });
+
+    document.querySelectorAll('input[name="timeWindow"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            fetchDataForTimeWindow(this.value);
+        });
+    });
+
+    function fetchDataForTimeWindow(days) {
+        fetch(`/trends?time_window=${days}`)
+            .then(response => response.json())
+            .then(data => {
+                vendorData = data.vendors;
+                federalData = data.federal_prices;
+                updateChartData();
+            });
+    }
+
+    function updateChartData() {
+        datasets.forEach((dataset, index) => {
+            if (dataset.label === 'Federal Average') {
+                dataset.data = federalData.prices.map((price, i) => ({ x: new Date(federalData.dates[i]), y: price }));
+            } else {
+                const data = vendorData[dataset.label];
+                dataset.data = data.prices.map((price, i) => ({ x: new Date(data.dates[i]), y: price }));
+            }
+        });
+        updateChart();
+    }
+
+    // Initialize the chart with Federal Average hidden
+    chart.setDatasetVisibility(datasets.length - 1, false);
+    updateChart();
 </script>
 {% endblock %}

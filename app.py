@@ -75,7 +75,7 @@ def perform_scrape(scheduled=False):
     return success, message
 
 # Scheduled task to scrape local data
-@scheduler.task('cron', id='daily_scrape', hour=8, minute=0)
+@scheduler.task('cron', id='daily_scrape', hour=10)
 def scheduled_scrape():
     with app.app_context():
         perform_scrape(scheduled=True)
@@ -117,7 +117,7 @@ def fetch_federal_data():
         return False, f"Error fetching federal data: {str(e)}"
 
 # Scheduled task for federal data
-@scheduler.task('cron', id='fetch_federal_data', hour=7, minute=0)
+@scheduler.task('cron', id='fetch_federal_data', hour=7)
 def scheduled_federal_data_fetch():
     with app.app_context():
         success, message = fetch_federal_data()
@@ -210,7 +210,7 @@ def toggle_schedule():
     return jsonify(success=True)
 
 # Modify the scheduled task for federal data to check if it's enabled
-@scheduler.task('cron', id='fetch_federal_data', hour=7, minute=0)
+@scheduler.task('cron', id='fetch_federal_data', hour=6)
 def scheduled_federal_data_fetch():
     with app.app_context():
         job = scheduler.get_job('fetch_federal_data')
@@ -231,7 +231,6 @@ def scheduled_federal_data_fetch():
                 logger.error("Scheduled federal data fetch failed")
         else:
             logger.info("Scheduled federal data fetch skipped (disabled)")
-
 
 @app.route('/prices')
 @login_required
@@ -273,15 +272,15 @@ def prices():
 @app.route('/trends')
 @login_required
 def trends():
-    # Calculate the date 3 months ago from today
-    three_months_ago = datetime.now().date() - timedelta(days=90)
+    time_window = request.args.get('time_window', '90')  # Default to 90 days
+    days_ago = datetime.now().date() - timedelta(days=int(time_window))
 
-    # Query to get price data for all vendors within the last 3 months
+    # Query to get price data for all vendors within the specified time window
     query = (
         select(Vendor.name, PriceData.date, PriceData.price)
         .select_from(Vendor)
         .join(PriceData, Vendor.id == PriceData.vendor_id)
-        .where(PriceData.date >= three_months_ago)
+        .where(PriceData.date >= days_ago)
         .order_by(Vendor.name, PriceData.date)
     )
 
@@ -296,8 +295,8 @@ def trends():
         vendors[vendor_name]['dates'].append(row.date.strftime('%Y-%m-%d'))
         vendors[vendor_name]['prices'].append(float(row.price))
 
-    # Fetch federal price data for the last 3 months
-    federal_data = FederalPriceData.query.filter(FederalPriceData.date >= three_months_ago).order_by(FederalPriceData.date).all()
+    # Fetch federal price data for the specified time window
+    federal_data = FederalPriceData.query.filter(FederalPriceData.date >= days_ago).order_by(FederalPriceData.date).all()
     federal_prices = {
         'dates': [data.date.strftime('%Y-%m-%d') for data in federal_data],
         'prices': [float(data.price) for data in federal_data]
@@ -305,18 +304,10 @@ def trends():
     
     logger.info(f"Trends page accessed. Vendor data points: {sum(len(v['dates']) for v in vendors.values())}, Federal data points: {len(federal_data)}")
 
-    return render_template('trends.html', vendors=vendors, federal_prices=federal_prices)
-
-# Scheduled task
-@scheduler.task('cron', id='daily_scrape', hour=0, minute=0)
-def scheduled_scrape():
-    logger.info("Starting scheduled scrape")
-    with app.app_context():
-        try:
-            scraper.scrape()
-            logger.info('Scheduled scraping completed successfully.')
-        except Exception as e:
-            logger.error(f'Error during scheduled scraping: {str(e)}', exc_info=True)
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'vendors': vendors, 'federal_prices': federal_prices})
+    else:
+        return render_template('trends.html', vendors=vendors, federal_prices=federal_prices)
 
 if __name__ == '__main__':
     app.run(debug=True)
