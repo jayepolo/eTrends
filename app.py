@@ -292,7 +292,8 @@ def trends():
         vendor_name = row.name
         if vendor_name not in vendors:
             vendors[vendor_name] = {'dates': [], 'prices': []}
-        vendors[vendor_name]['dates'].append(row.date.strftime('%Y-%m-%d'))
+        vendors[vendor_name]['dates'].append(row.date.strftime('%Y-%m-%dT08:00:00Z'))
+        #vendors[vendor_name]['dates'].append(row.date.strftime('%Y-%m-%d'))
         vendors[vendor_name]['prices'].append(float(row.price))
 
     # Fetch federal price data for the specified time window

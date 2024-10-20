@@ -143,7 +143,11 @@
                 x: {
                     type: 'time',
                     time: {
-                        unit: 'week'
+                        parser: 'yyyy-MM-dd\'T\'HH:mm:ss\'Z\'',
+                        unit: 'day',
+                        displayFormats: {
+                            day: 'MMM d'
+                        }
                     },
                     title: {
                         display: true,
