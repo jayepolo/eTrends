@@ -67,7 +67,7 @@ jobs:
             # Run new container
             docker run -d \
               --name flask-app \
-              -p 80:80 \
+              -p 5001:5000 \
               --restart unless-stopped \
               $DOCKER_REGISTRY/$IMAGE_NAME:latest
 
